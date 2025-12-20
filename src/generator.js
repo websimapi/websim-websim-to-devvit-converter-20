@@ -9,9 +9,11 @@ import {
     generateDevvitJson,
     generateViteConfig,
     tsConfig,
-    getMainTsx,
     getServerDbJs,
-    getServerMainJs,
+    getServerInitJs,
+    getServerSaveJs,
+    getServerLoadJs,
+    getServerDeleteJs,
     getServerOnInstallJs,
     getServerCreatePostJs,
     simpleLoggerJs,
@@ -140,17 +142,21 @@ export { Player } from '@remotion/player';
         `.trim());
     }
 
-    // 4. Source Code (Devvit Main.tsx)
-    zip.file("src/main.tsx", getMainTsx(projectTitle, indexPath));
+    // 4. Source Code (Devvit Main.tsx) - REMOVED (Defined in devvit.json entrypoints)
 
     // 5. Server Code (Redis/API) - File-based routing
     // Shared Utils
     zip.file("src/server/db.js", getServerDbJs());
-    // Public API (src/server/index.js -> /, /init, /save, etc)
-    zip.file("src/server/index.js", getServerMainJs());
+    
+    // Public API Endpoints (Individual files for routing)
+    zip.file("src/server/init.js", getServerInitJs());
+    zip.file("src/server/save.js", getServerSaveJs());
+    zip.file("src/server/load.js", getServerLoadJs());
+    zip.file("src/server/delete.js", getServerDeleteJs());
+
     // Internal Handlers (src/server/internal/...)
     zip.file("src/server/internal/onInstall.js", getServerOnInstallJs());
-    zip.file("src/server/internal/createPost.tsx", getServerCreatePostJs(projectTitle));
+    zip.file("src/server/internal/createPost.js", getServerCreatePostJs(projectTitle));
 
     // Note: 'webroot' folder is not created here, it will be created by 'npm run build:client' inside the user's project.
     

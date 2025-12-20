@@ -45,9 +45,7 @@ export const generateDevvitJson = (slug) => JSON.stringify({
   // "server" block removed to enable default file-system routing (src/server/)
   "permissions": {
     "redis": true,
-    "reddit": {
-      "enable": true
-    }
+    "reddit": true
   },
   "triggers": {
     "onAppInstall": "/internal/onInstall"

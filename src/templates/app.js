@@ -1,46 +1,3 @@
-export const getMainTsx = (title, webviewPath = 'index.html') => {
-  const safeTitle = title.replace(/'/g, "\\'");
-  return `/** @jsx Devvit.createElement */
-/** @jsxFrag Devvit.Fragment */
-
-import { Devvit } from '@devvit/public-api';
-
-Devvit.configure({
-  redditAPI: true,
-  redis: true,
-});
-
-Devvit.addCustomPostType({
-  name: '${safeTitle}',
-  height: 'tall',
-  render: (context) => {
-    return (
-      <vstack height="100%" width="100%">
-        <webview
-          id="gameview"
-          url="${webviewPath}"
-          width="100%"
-          height="100%"
-          onMessage={(msg) => {
-            let data = msg;
-            if (typeof data === 'string') {
-                try { data = JSON.parse(data); } catch(e) {}
-            }
-            
-            if (data && data.type === 'console' && data.args) {
-               console.log(\`[Web] \${data.level}: \`, ...data.args);
-            }
-          }}
-        />
-      </vstack>
-    );
-  },
-});
-
-export default Devvit;
-`;
-};
-
 export const getServerDbJs = () => `
 import { redis, reddit } from '@devvit/web/server';
 
@@ -92,58 +49,54 @@ export async function fetchAllData() {
 }
 `;
 
-export const getServerMainJs = () => `
-import { redis } from '@devvit/web/server';
-import { fetchAllData, DB_REGISTRY_KEY } from './db.js';
+export const getServerInitJs = () => `
+import { fetchAllData } from './db.js';
 
-// API Endpoints - Maps to /init, /save, etc.
-
-export async function GET_init(req, res) {
+export default async function (req, res) {
     const data = await fetchAllData();
     res.json(data);
 }
+`;
 
-export async function POST_save(req, res) {
+export const getServerSaveJs = () => `
+import { redis } from '@devvit/web/server';
+import { DB_REGISTRY_KEY } from './db.js';
+
+export default async function (req, res) {
     try {
         const { collection, key, value } = await req.json();
-        
-        await redis.hSet(collection, { 
-            [key]: JSON.stringify(value) 
-        });
-        
-        await redis.zAdd(DB_REGISTRY_KEY, { 
-            member: collection, 
-            score: Date.now() 
-        });
-        
+        await redis.hSet(collection, { [key]: JSON.stringify(value) });
+        await redis.zAdd(DB_REGISTRY_KEY, { member: collection, score: Date.now() });
         res.json({ success: true, collection, key });
     } catch(e) {
         console.error('DB Save Error:', e);
         res.status(500).json({ error: e.message });
     }
 }
+`;
 
-export async function POST_load(req, res) {
+export const getServerLoadJs = () => `
+import { redis } from '@devvit/web/server';
+
+export default async function (req, res) {
     try {
         const { collection, key } = await req.json();
         const value = await redis.hGet(collection, key);
-        
-        res.json({ 
-            collection, 
-            key, 
-            value: value ? JSON.parse(value) : null 
-        });
+        res.json({ collection, key, value: value ? JSON.parse(value) : null });
     } catch(e) {
         console.error('DB Get Error:', e);
         res.status(500).json({ error: e.message });
     }
 }
+`;
 
-export async function POST_delete(req, res) {
+export const getServerDeleteJs = () => `
+import { redis } from '@devvit/web/server';
+
+export default async function (req, res) {
     try {
         const { collection, key } = await req.json();
         await redis.hDel(collection, [key]);
-        
         res.json({ success: true, collection, key });
     } catch(e) {
         console.error('DB Delete Error:', e);
@@ -163,25 +116,24 @@ export default async function (req, res) {
 export const getServerCreatePostJs = (title) => {
     const safeTitle = title.replace(/'/g, "\\'");
     return `
-/** @jsx Devvit.createElement */
-/** @jsxFrag Devvit.Fragment */
-
-import { Devvit } from '@devvit/public-api';
-import { reddit } from '@devvit/web/server';
+import { reddit, context } from '@devvit/web/server';
 
 // Maps to /internal/createPost
 export default async function (req, res) {
     console.log('Creating game post...');
     try {
-        const subreddit = await reddit.getCurrentSubreddit();
-        const post = await reddit.submitPost({
+        const { subredditName } = context;
+        if (!subredditName) {
+            throw new Error('Could not determine subreddit from context');
+        }
+
+        const post = await reddit.submitCustomPost({
             title: '${safeTitle}',
-            subredditName: subreddit.name,
-            preview: (
-                <vstack height="100%" width="100%" alignment="middle center">
-                    <text size="large">Loading Game...</text>
-                </vstack>
-            ),
+            subredditName: subredditName,
+            entry: 'default', // matches devvit.json entrypoint
+            userGeneratedContent: {
+                text: 'Play this game built with WebSim!'
+            }
         });
         
         res.json({
