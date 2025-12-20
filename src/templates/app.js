@@ -116,13 +116,15 @@ export default async function (req, res) {
 export const getServerCreatePostJs = (title) => {
     const safeTitle = title.replace(/'/g, "\\'");
     return `
-import { reddit, context } from '@devvit/web/server';
+import { reddit } from '@devvit/web/server';
 
 // Maps to /internal/createPost
 export default async function (req, res) {
     console.log('Creating game post...');
     try {
-        const { subredditName } = context;
+        // Access context from the request object
+        const { subredditName } = req.context;
+        
         if (!subredditName) {
             throw new Error('Could not determine subreddit from context');
         }
