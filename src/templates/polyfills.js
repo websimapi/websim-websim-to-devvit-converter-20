@@ -49,23 +49,12 @@ export const websimSocketPolyfill = `
     window._currentUser = null;
 
     const DevvitBridge = {
-        send: (type, payload) => {
-            try {
-                const cleanPayload = JSON.parse(JSON.stringify(payload || {}));
-                if (window.parent) {
-                    window.parent.postMessage({ type, payload: cleanPayload }, '*');
-                }
-            } catch (e) { 
-                console.error('Bridge Send Error:', e); 
-            }
-        },
-
         init: async () => {
             console.log("[Bridge] Initializing...");
             
             try {
-                // Load initial data from server
-                const data = await fetch('/api/init').then(r => r.json());
+                // Load initial data from server via HTTP
+                const data = await fetch('/init').then(r => r.json());
                 
                 if (data.dbData) {
                     window._genericDB = data.dbData;
@@ -105,7 +94,7 @@ export const websimSocketPolyfill = `
 
     // Expose API
     window.GenericDB = {
-        save: (collection, key, value) => {
+        save: async (collection, key, value) => {
             if (!window._genericDB[collection]) {
                 window._genericDB[collection] = {};
             }
@@ -114,8 +103,16 @@ export const websimSocketPolyfill = `
             // Optimistic local update
             DevvitBridge.notifySubscribers(collection);
             
-            // Send to server
-            DevvitBridge.send('DB_SAVE', { collection, key, value });
+            // Send to server via HTTP
+            try {
+                await fetch('/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ collection, key, value })
+                });
+            } catch (e) {
+                console.error("[Bridge] Save failed:", e);
+            }
         },
         
         get: (collection, key) => {
@@ -127,25 +124,36 @@ export const websimSocketPolyfill = `
         },
         
         // Async get from server (bypasses cache)
-        fetchFromServer: (collection, key) => {
-            return new Promise((resolve) => {
-                const handler = (event) => {
-                    if (event.detail.collection === collection && 
-                        event.detail.key === key) {
-                        window.removeEventListener('DB_GET_RESPONSE', handler);
-                        resolve(event.detail.value);
-                    }
-                };
-                
-                window.addEventListener('DB_GET_RESPONSE', handler);
-                DevvitBridge.send('DB_GET', { collection, key });
-                
-                // Timeout after 5 seconds
-                setTimeout(() => {
-                    window.removeEventListener('DB_GET_RESPONSE', handler);
-                    resolve(null);
-                }, 5000);
-            });
+        fetchFromServer: async (collection, key) => {
+            try {
+                const res = await fetch('/load', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ collection, key })
+                });
+                const data = await res.json();
+                return data.value;
+            } catch(e) { 
+                console.error("[Bridge] Load failed:", e);
+                return null; 
+            }
+        },
+        
+        delete: async (collection, key) => {
+            if (window._genericDB[collection]) {
+                delete window._genericDB[collection][key];
+            }
+            DevvitBridge.notifySubscribers(collection);
+            
+            try {
+                await fetch('/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ collection, key })
+                });
+            } catch (e) {
+                console.error("[Bridge] Delete failed:", e);
+            }
         },
         
         subscribe: (collection, callback) => {
@@ -209,22 +217,7 @@ export const websimSocketPolyfill = `
         }
 
         async delete(id) {
-             // We implement soft delete or just delete from local cache + send update?
-             // Devvit Redis doesn't support 'delete' easily in hSet, 
-             // usually we set to null or remove.
-             // For now, we'll just ignore or implement a delete marker if needed.
-             // Let's just remove from local and assume server handles it?
-             // Server code doesn't have DB_DELETE type yet.
-             // We will implement a 'deleted' flag save.
-             const current = window.GenericDB.get(this.name, id);
-             if (current) {
-                 // Hack: Save as null/undefined to simulate delete?
-                 // Or actually, just removing from local view is enough for the game loop usually.
-                 if (window._genericDB[this.name]) delete window._genericDB[this.name][id];
-                 DevvitBridge.notifySubscribers(this.name);
-                 
-                 // TODO: Add DB_DELETE support to server. For now, this is client-side only for session.
-             }
+             await window.GenericDB.delete(this.name, id);
         }
 
         subscribe(cb) {
