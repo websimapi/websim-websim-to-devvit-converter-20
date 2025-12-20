@@ -70,9 +70,13 @@ files.forEach(fileObj => {
         // Only warn if it looks like a script source or import, avoiding common XML namespaces
         // We look for 'from "http' or 'src="http' specifically.
         // We use a regex that avoids matching "http://www.w3.org..." or redditstatic
-        if (content.match(/from\\s+['"]http/i) || content.match(/src\\s*=\\s*['"]http(?!:\\/\\/(www\\.w3\\.org|www\\.redditstatic\\.com))/i)) {
+        // Updated to handle https and be robust against replacement strings
+        const remoteMatch = content.match(/src\\s*=\\s*['"](https?:\\/\\/(?!(www\\.w3\\.org|(\\w+\\.)?redditstatic\\.com|images\\.websim\\.ai|images\\.websim\\.com))[^'"]+)['"]/i);
+        const importMatch = content.match(/from\\s+['"](http[^'"]+)/i);
+
+        if (importMatch || remoteMatch) {
             console.warn(\`⚠️  Possible remote import in \${f}. Devvit may block this.\`);
-            const match = content.match(/(?:from|src\\s*=\\s*)['"](http[^'"]+)/i);
+            const match = importMatch || remoteMatch;
             if (match) console.warn(\`   Target: \${match[1]}\`);
             issues++;
         }

@@ -42,9 +42,7 @@ export const generateDevvitJson = (slug) => JSON.stringify({
       }
     }
   },
-  "server": {
-    "entry": "src/server/index.js"
-  },
+  // "server" block removed to enable default file-system routing (src/server/)
   "permissions": {
     "redis": true,
     "reddit": {
@@ -52,7 +50,7 @@ export const generateDevvitJson = (slug) => JSON.stringify({
     }
   },
   "triggers": {
-    "onAppInstall": "onInstall"
+    "onAppInstall": "/internal/onInstall"
   },
   "menu": {
     "items": [
@@ -60,7 +58,7 @@ export const generateDevvitJson = (slug) => JSON.stringify({
         "label": "Add Game Post",
         "location": "subreddit",
         "forUserType": "moderator",
-        "endpoint": "createPost"
+        "endpoint": "/internal/createPost"
       }
     ]
   }

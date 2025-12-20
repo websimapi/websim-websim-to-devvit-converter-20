@@ -10,7 +10,10 @@ import {
     generateViteConfig,
     tsConfig,
     getMainTsx,
-    getServerIndexJs,
+    getServerDbJs,
+    getServerMainJs,
+    getServerOnInstallJs,
+    getServerCreatePostJs,
     simpleLoggerJs,
     websimSocketPolyfill,
     websimStubsJs,
@@ -140,8 +143,14 @@ export { Player } from '@remotion/player';
     // 4. Source Code (Devvit Main.tsx)
     zip.file("src/main.tsx", getMainTsx(projectTitle, indexPath));
 
-    // 5. Server Code (Redis/API)
-    zip.file("src/server/index.js", getServerIndexJs(projectTitle));
+    // 5. Server Code (Redis/API) - File-based routing
+    // Shared Utils
+    zip.file("src/server/db.js", getServerDbJs());
+    // Public API (src/server/index.js -> /, /init, /save, etc)
+    zip.file("src/server/index.js", getServerMainJs());
+    // Internal Handlers (src/server/internal/...)
+    zip.file("src/server/internal/onInstall.js", getServerOnInstallJs());
+    zip.file("src/server/internal/createPost.js", getServerCreatePostJs(projectTitle));
 
     // Note: 'webroot' folder is not created here, it will be created by 'npm run build:client' inside the user's project.
     

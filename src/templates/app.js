@@ -31,13 +31,12 @@ export default Devvit;
 `;
 };
 
-export const getServerIndexJs = (title) => {
-    const safeTitle = title.replace(/'/g, "\\'");
-    return `import { redis, reddit } from '@devvit/web/server';
+export const getServerDbJs = () => `
+import { redis, reddit } from '@devvit/web/server';
 
-const DB_REGISTRY_KEY = 'sys:registry';
+export const DB_REGISTRY_KEY = 'sys:registry';
 
-async function fetchAllData() {
+export async function fetchAllData() {
     try {
         const collections = await redis.zRange(DB_REGISTRY_KEY, 0, -1);
         const dbData = {};
@@ -81,8 +80,13 @@ async function fetchAllData() {
         return { dbData: {}, user: null };
     }
 }
+`;
 
-// API Endpoints
+export const getServerMainJs = () => `
+import { redis } from '@devvit/web/server';
+import { fetchAllData, DB_REGISTRY_KEY } from './db.js';
+
+// API Endpoints - Maps to /init, /save, etc.
 
 export async function GET_init(req, res) {
     const data = await fetchAllData();
@@ -136,9 +140,23 @@ export async function POST_delete(req, res) {
         res.status(500).json({ error: e.message });
     }
 }
+`;
 
-// Menu Action
-export async function POST_createPost(req, res) {
+export const getServerOnInstallJs = () => `
+// Maps to /internal/onInstall
+export default async function (req, res) {
+    console.log('App installed!');
+    res.json({ success: true });
+}
+`;
+
+export const getServerCreatePostJs = (title) => {
+    const safeTitle = title.replace(/'/g, "\\'");
+    return `
+import { reddit } from '@devvit/web/server';
+
+// Maps to /internal/createPost
+export default async function (req, res) {
     const subreddit = await reddit.getCurrentSubreddit();
     const post = await reddit.submitPost({
         title: '${safeTitle}',
@@ -154,12 +172,6 @@ export async function POST_createPost(req, res) {
         showToast: { text: 'Game post created!' },
         navigateTo: post
     });
-}
-
-// Triggers
-export async function POST_onInstall(req, res) {
-    console.log('App installed!');
-    res.json({ success: true });
 }
 `;
 };
