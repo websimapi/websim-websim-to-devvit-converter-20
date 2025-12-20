@@ -13,7 +13,7 @@ Devvit.configure({
 Devvit.addCustomPostType({
   name: '${safeTitle}',
   height: 'tall',
-  render: () => {
+  render: (context) => {
     return (
       <vstack height="100%" width="100%">
         <webview
@@ -21,6 +21,16 @@ Devvit.addCustomPostType({
           url="${webviewPath}"
           width="100%"
           height="100%"
+          onMessage={(msg) => {
+            let data = msg;
+            if (typeof data === 'string') {
+                try { data = JSON.parse(data); } catch(e) {}
+            }
+            
+            if (data && data.type === 'console' && data.args) {
+               console.log(\`[Web] \${data.level}: \`, ...data.args);
+            }
+          }}
         />
       </vstack>
     );
@@ -153,25 +163,31 @@ export default async function (req, res) {
 export const getServerCreatePostJs = (title) => {
     const safeTitle = title.replace(/'/g, "\\'");
     return `
+import { Devvit } from '@devvit/public-api';
 import { reddit } from '@devvit/web/server';
 
 // Maps to /internal/createPost
 export default async function (req, res) {
-    const subreddit = await reddit.getCurrentSubreddit();
-    const post = await reddit.submitPost({
-        title: '${safeTitle}',
-        subredditName: subreddit.name,
-        preview: (
-            <vstack height="100%" width="100%" alignment="middle center">
-                <text size="large">Loading Game...</text>
-            </vstack>
-        ),
-    });
-    
-    res.json({
-        showToast: { text: 'Game post created!' },
-        navigateTo: post
-    });
+    try {
+        const subreddit = await reddit.getCurrentSubreddit();
+        const post = await reddit.submitPost({
+            title: '${safeTitle}',
+            subredditName: subreddit.name,
+            preview: (
+                <vstack height="100%" width="100%" alignment="middle center">
+                    <text size="large">Loading Game...</text>
+                </vstack>
+            ),
+        });
+        
+        res.json({
+            showToast: { text: 'Game post created!' },
+            navigateTo: post
+        });
+    } catch (e) {
+        console.error('Failed to create post:', e);
+        res.status(500).json({ error: e.message });
+    }
 }
 `;
 };
