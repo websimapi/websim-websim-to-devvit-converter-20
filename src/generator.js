@@ -6,10 +6,11 @@ import {
 
 import {
     generatePackageJson,
-    generateDevvitYaml,
+    generateDevvitJson,
     generateViteConfig,
     tsConfig,
     getMainTsx,
+    getServerIndexJs,
     simpleLoggerJs,
     websimSocketPolyfill,
     websimStubsJs,

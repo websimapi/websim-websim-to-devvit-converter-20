@@ -3,24 +3,45 @@ export const getMainTsx = (title, webviewPath = 'index.html') => {
   return `/** @jsx Devvit.createElement */
 /** @jsxFrag Devvit.Fragment */
 
-import { Devvit, useAsync, useState } from '@devvit/public-api';
-
-// Registry key for tracking database collections
-const DB_REGISTRY_KEY = 'sys:registry';
+import { Devvit } from '@devvit/public-api';
 
 Devvit.configure({
   redditAPI: true,
   redis: true,
 });
 
-// Server-side data fetching function
-async function fetchAllData(redis, reddit) {
+Devvit.addCustomPostType({
+  name: '${safeTitle}',
+  height: 'tall',
+  render: () => {
+    return (
+      <vstack height="100%" width="100%">
+        <webview
+          id="gameview"
+          url="${webviewPath}"
+          width="100%"
+          height="100%"
+        />
+      </vstack>
+    );
+  },
+});
+
+export default Devvit;
+`;
+};
+
+export const getServerIndexJs = (title) => {
+    const safeTitle = title.replace(/'/g, "\\'");
+    return `import { redis, reddit } from '@devvit/web/server';
+
+const DB_REGISTRY_KEY = 'sys:registry';
+
+async function fetchAllData() {
     try {
-        // 1. Get all registered collections
         const collections = await redis.zRange(DB_REGISTRY_KEY, 0, -1);
         const dbData = {};
 
-        // 2. Fetch all collection data in parallel
         await Promise.all(collections.map(async (item) => {
             const colName = typeof item === 'string' ? item : item.member;
             const raw = await redis.hGetAll(colName);
@@ -35,7 +56,6 @@ async function fetchAllData(redis, reddit) {
             dbData[colName] = parsed;
         }));
 
-        // 3. Get current user info
         let user = { 
             id: 'anon', 
             username: 'Guest', 
@@ -58,154 +78,89 @@ async function fetchAllData(redis, reddit) {
         return { dbData, user };
     } catch(e) {
         console.error('Hydration Error:', e);
-        return null;
+        return { dbData: {}, user: null };
     }
 }
 
-// Menu action to create game posts
-Devvit.addMenuItem({
-  label: 'Add Game Post',
-  location: 'subreddit',
-  forUserType: 'moderator',
-  onPress: async (_event, context) => {
-    const { reddit, ui } = context;
+// API Endpoints
+
+export async function GET_init(req, res) {
+    const data = await fetchAllData();
+    res.json(data);
+}
+
+export async function POST_save(req, res) {
+    try {
+        const { collection, key, value } = await req.json();
+        
+        await redis.hSet(collection, { 
+            [key]: JSON.stringify(value) 
+        });
+        
+        await redis.zAdd(DB_REGISTRY_KEY, { 
+            member: collection, 
+            score: Date.now() 
+        });
+        
+        res.json({ success: true, collection, key });
+    } catch(e) {
+        console.error('DB Save Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+}
+
+export async function POST_load(req, res) {
+    try {
+        const { collection, key } = await req.json();
+        const value = await redis.hGet(collection, key);
+        
+        res.json({ 
+            collection, 
+            key, 
+            value: value ? JSON.parse(value) : null 
+        });
+    } catch(e) {
+        console.error('DB Get Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+}
+
+export async function POST_delete(req, res) {
+    try {
+        const { collection, key } = await req.json();
+        await redis.hDel(collection, [key]);
+        
+        res.json({ success: true, collection, key });
+    } catch(e) {
+        console.error('DB Delete Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+}
+
+// Menu Action
+export async function POST_createPost(req, res) {
     const subreddit = await reddit.getCurrentSubreddit();
     const post = await reddit.submitPost({
-      title: '${safeTitle}',
-      subredditName: subreddit.name,
-      preview: (
-        <vstack height="100%" width="100%" alignment="middle center">
-          <text size="large">Loading Game...</text>
-        </vstack>
-      ),
+        title: '${safeTitle}',
+        subredditName: subreddit.name,
+        preview: (
+            <vstack height="100%" width="100%" alignment="middle center">
+                <text size="large">Loading Game...</text>
+            </vstack>
+        ),
     });
-    ui.showToast({ text: 'Created Game Post!' });
-    ui.navigateTo(post);
-  },
-});
-
-// Main custom post component
-Devvit.addCustomPostType({
-  name: 'WebSim Game',
-  height: 'tall',
-  render: (context) => {
-    const { redis, reddit, ui } = context;
     
-    // Pre-fetch data on server side using useAsync
-    const { data: initialData, loading } = useAsync(async () => {
-        return await fetchAllData(redis, reddit);
+    res.json({
+        showToast: { text: 'Game post created!' },
+        navigateTo: post
     });
+}
 
-    const [webviewVisible, setWebviewVisible] = useState(false);
-
-    // Show webview once data is loaded
-    if (!loading && initialData && !webviewVisible) {
-        setWebviewVisible(true);
-    }
-
-    return (
-      <vstack height="100%" width="100%">
-        <webview
-          id="gameview"
-          url="${webviewPath}"
-          width="100%"
-          height="100%"
-          onMessage={async (msg) => {
-            // ✅ CRITICAL FIX: onMessage only receives ONE parameter (the message)
-            // Access redis, ui, reddit from the outer context closure
-            
-            // Extract message data
-            const { type, payload } = msg || {};
-
-            if (!type) return;
-
-            // A. Client Ready - Send Hydration Data
-            if (type === 'CLIENT_READY' || type === 'DB_LOAD') {
-                if (initialData) {
-                    ui.webView.postMessage('gameview', {
-                        type: 'DB_HYDRATE',
-                        payload: initialData.dbData,
-                        user: initialData.user
-                    });
-                }
-            }
-
-            // B. Database Save
-            if (type === 'DB_SAVE' && payload) {
-                try {
-                    const { collection, key, value } = payload;
-                    
-                    // Save to Redis
-                    await redis.hSet(collection, { 
-                        [key]: JSON.stringify(value) 
-                    });
-                    
-                    // Update registry
-                    await redis.zAdd(DB_REGISTRY_KEY, { 
-                        member: collection, 
-                        score: Date.now() 
-                    });
-                    
-                    // Acknowledge save
-                    ui.webView.postMessage('gameview', {
-                        type: 'DB_SAVE_SUCCESS',
-                        payload: { collection, key }
-                    });
-                } catch(e) {
-                    console.error('DB Save Error:', e);
-                    ui.webView.postMessage('gameview', {
-                        type: 'DB_SAVE_ERROR',
-                        payload: { error: e.message }
-                    });
-                }
-            }
-            
-            // C. Database Query
-            if (type === 'DB_GET' && payload) {
-                try {
-                    const { collection, key } = payload;
-                    const value = await redis.hGet(collection, key);
-                    
-                    ui.webView.postMessage('gameview', {
-                        type: 'DB_GET_RESPONSE',
-                        payload: { 
-                            collection, 
-                            key, 
-                            value: value ? JSON.parse(value) : null 
-                        }
-                    });
-                } catch(e) {
-                    console.error('DB Get Error:', e);
-                }
-            }
-            
-            // D. Database Delete
-            if (type === 'DB_DELETE' && payload) {
-                try {
-                    const { collection, key } = payload;
-                    await redis.hDel(collection, [key]);
-                    
-                    ui.webView.postMessage('gameview', {
-                        type: 'DB_DELETE_SUCCESS',
-                        payload: { collection, key }
-                    });
-                } catch(e) {
-                    console.error('DB Delete Error:', e);
-                }
-            }
-            
-            // E. Logging
-            if (type === 'console') {
-                console.log('[Web]', ...(msg.args || []));
-            }
-          }}
-        />
-      </vstack>
-    );
-  },
-});
-
-export default Devvit;
+// Triggers
+export async function POST_onInstall(req, res) {
+    console.log('App installed!');
+    res.json({ success: true });
+}
 `;
 };
 

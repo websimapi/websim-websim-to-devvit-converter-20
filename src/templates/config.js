@@ -30,9 +30,41 @@ export const generatePackageJson = (slug, dependencies = {}, devDependencies = {
   }
 }, null, 2);
 
-export const generateDevvitYaml = (slug) => `name: ${slug}
-version: 0.1.0
-`;
+export const generateDevvitJson = (slug) => JSON.stringify({
+  "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
+  "name": slug,
+  "post": {
+    "dir": "webroot",
+    "entrypoints": {
+      "default": {
+        "entry": "index.html",
+        "height": "tall"
+      }
+    }
+  },
+  "server": {
+    "entry": "src/server/index.js"
+  },
+  "permissions": {
+    "redis": true,
+    "reddit": {
+      "enable": true
+    }
+  },
+  "triggers": {
+    "onAppInstall": "onInstall"
+  },
+  "menu": {
+    "items": [
+      {
+        "label": "Add Game Post",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "createPost"
+      }
+    ]
+  }
+}, null, 2);
 
 export const generateViteConfig = ({ hasReact = false, hasRemotion = false } = {}) => `
 import { defineConfig } from 'vite';

@@ -60,60 +60,33 @@ export const websimSocketPolyfill = `
             }
         },
 
-        init: () => {
+        init: async () => {
             console.log("[Bridge] Initializing...");
             
-            // Listen for messages from Devvit
-            window.addEventListener('message', (event) => {
-                const data = event.data || {};
-                const type = data.type;
-                const payload = data.payload;
-
-                // Handle hydration
-                if (type === 'DB_HYDRATE') {
-                    console.log("[Bridge] Database Hydrated");
-                    if (payload) window._genericDB = payload;
+            try {
+                // Load initial data from server
+                const data = await fetch('/api/init').then(r => r.json());
+                
+                if (data.dbData) {
+                    window._genericDB = data.dbData;
+                    window._currentUser = data.user;
                     
-                    // Store user identity
-                    if (data.user) {
-                        window._currentUser = data.user;
-                        // Legacy stub support
-                        if (window.WebsimSocket && window.WebsimSocket.updateIdentity) {
-                             window.WebsimSocket.updateIdentity(data.user);
-                        }
+                    // Legacy stub support
+                    if (window.WebsimSocket && window.WebsimSocket.updateIdentity && data.user) {
+                        window.WebsimSocket.updateIdentity(data.user);
                     }
                     
-                    // Trigger ready event
                     const readyEvent = new CustomEvent('GAMEDATA_READY', { 
-                        detail: payload 
+                        detail: data.dbData 
                     });
                     window.dispatchEvent(readyEvent);
                     
-                    // Notify subscribers
                     Object.keys(window._subscribers).forEach(col => {
-                         DevvitBridge.notifySubscribers(col);
+                        DevvitBridge.notifySubscribers(col);
                     });
                 }
-                
-                // Handle save confirmation
-                if (type === 'DB_SAVE_SUCCESS') {
-                    const { collection } = payload;
-                    DevvitBridge.notifySubscribers(collection);
-                }
-                
-                // Handle query response
-                if (type === 'DB_GET_RESPONSE') {
-                    // Trigger custom event for async handlers
-                    const evt = new CustomEvent('DB_GET_RESPONSE', { 
-                        detail: payload 
-                    });
-                    window.dispatchEvent(evt);
-                }
-            });
-
-            // Send ready signal
-            if (window.parent) {
-                DevvitBridge.send('CLIENT_READY');
+            } catch (e) {
+                console.warn("[Bridge] Init failed (might be offline)", e);
             }
         },
 
