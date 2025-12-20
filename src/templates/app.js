@@ -110,10 +110,9 @@ Devvit.addCustomPostType({
           url="${webviewPath}"
           width="100%"
           height="100%"
-          onMessage={async (msg, messageContext) => {
-            // ✅ CRITICAL FIX: Use messageContext (second param) for redis/ui access
-            // NOT the render context from closure
-            const { redis: msgRedis, ui: msgUi } = messageContext;
+          onMessage={async (msg) => {
+            // ✅ CRITICAL FIX: onMessage only receives ONE parameter (the message)
+            // Access redis, ui, reddit from the outer context closure
             
             // Extract message data
             const { type, payload } = msg || {};
@@ -123,7 +122,7 @@ Devvit.addCustomPostType({
             // A. Client Ready - Send Hydration Data
             if (type === 'CLIENT_READY' || type === 'DB_LOAD') {
                 if (initialData) {
-                    msgUi.webView.postMessage('gameview', {
+                    ui.webView.postMessage('gameview', {
                         type: 'DB_HYDRATE',
                         payload: initialData.dbData,
                         user: initialData.user
@@ -137,24 +136,24 @@ Devvit.addCustomPostType({
                     const { collection, key, value } = payload;
                     
                     // Save to Redis
-                    await msgRedis.hSet(collection, { 
+                    await redis.hSet(collection, { 
                         [key]: JSON.stringify(value) 
                     });
                     
                     // Update registry
-                    await msgRedis.zAdd(DB_REGISTRY_KEY, { 
+                    await redis.zAdd(DB_REGISTRY_KEY, { 
                         member: collection, 
                         score: Date.now() 
                     });
                     
                     // Acknowledge save
-                    msgUi.webView.postMessage('gameview', {
+                    ui.webView.postMessage('gameview', {
                         type: 'DB_SAVE_SUCCESS',
                         payload: { collection, key }
                     });
                 } catch(e) {
                     console.error('DB Save Error:', e);
-                    msgUi.webView.postMessage('gameview', {
+                    ui.webView.postMessage('gameview', {
                         type: 'DB_SAVE_ERROR',
                         payload: { error: e.message }
                     });
@@ -165,9 +164,9 @@ Devvit.addCustomPostType({
             if (type === 'DB_GET' && payload) {
                 try {
                     const { collection, key } = payload;
-                    const value = await msgRedis.hGet(collection, key);
+                    const value = await redis.hGet(collection, key);
                     
-                    msgUi.webView.postMessage('gameview', {
+                    ui.webView.postMessage('gameview', {
                         type: 'DB_GET_RESPONSE',
                         payload: { 
                             collection, 
@@ -180,7 +179,22 @@ Devvit.addCustomPostType({
                 }
             }
             
-            // D. Logging
+            // D. Database Delete
+            if (type === 'DB_DELETE' && payload) {
+                try {
+                    const { collection, key } = payload;
+                    await redis.hDel(collection, [key]);
+                    
+                    ui.webView.postMessage('gameview', {
+                        type: 'DB_DELETE_SUCCESS',
+                        payload: { collection, key }
+                    });
+                } catch(e) {
+                    console.error('DB Delete Error:', e);
+                }
+            }
+            
+            // E. Logging
             if (type === 'console') {
                 console.log('[Web]', ...(msg.args || []));
             }
