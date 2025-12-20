@@ -163,11 +163,15 @@ export default async function (req, res) {
 export const getServerCreatePostJs = (title) => {
     const safeTitle = title.replace(/'/g, "\\'");
     return `
+/** @jsx Devvit.createElement */
+/** @jsxFrag Devvit.Fragment */
+
 import { Devvit } from '@devvit/public-api';
 import { reddit } from '@devvit/web/server';
 
 // Maps to /internal/createPost
 export default async function (req, res) {
+    console.log('Creating game post...');
     try {
         const subreddit = await reddit.getCurrentSubreddit();
         const post = await reddit.submitPost({

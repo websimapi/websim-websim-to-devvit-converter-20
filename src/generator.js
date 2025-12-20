@@ -150,7 +150,7 @@ export { Player } from '@remotion/player';
     zip.file("src/server/index.js", getServerMainJs());
     // Internal Handlers (src/server/internal/...)
     zip.file("src/server/internal/onInstall.js", getServerOnInstallJs());
-    zip.file("src/server/internal/createPost.js", getServerCreatePostJs(projectTitle));
+    zip.file("src/server/internal/createPost.tsx", getServerCreatePostJs(projectTitle));
 
     // Note: 'webroot' folder is not created here, it will be created by 'npm run build:client' inside the user's project.
     
