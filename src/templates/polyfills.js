@@ -54,7 +54,7 @@ export const websimSocketPolyfill = `
             
             try {
                 // Load initial data from server via HTTP
-                const data = await fetch('/init').then(r => r.json());
+                const data = await fetch('/api/init').then(r => r.json());
                 
                 if (data.dbData) {
                     window._genericDB = data.dbData;
@@ -105,7 +105,7 @@ export const websimSocketPolyfill = `
             
             // Send to server via HTTP
             try {
-                await fetch('/save', {
+                await fetch('/api/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ collection, key, value })
@@ -126,7 +126,7 @@ export const websimSocketPolyfill = `
         // Async get from server (bypasses cache)
         fetchFromServer: async (collection, key) => {
             try {
-                const res = await fetch('/load', {
+                const res = await fetch('/api/load', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ collection, key })
@@ -146,7 +146,7 @@ export const websimSocketPolyfill = `
             DevvitBridge.notifySubscribers(collection);
             
             try {
-                await fetch('/delete', {
+                await fetch('/api/delete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ collection, key })

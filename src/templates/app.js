@@ -1,9 +1,28 @@
-export const getServerDbJs = () => `
-import { redis, reddit } from '@devvit/web/server';
+export const getMainTs = (title) => {
+    const safeTitle = title.replace(/'/g, "\\'");
+    return `
+import express from 'express';
+import { 
+    createServer, 
+    context, 
+    getServerPort, 
+    redis, 
+    reddit 
+} from '@devvit/web/server';
 
-export const DB_REGISTRY_KEY = 'sys:registry';
+const app = express();
 
-export async function fetchAllData() {
+// Body parsers
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.text());
+
+const router = express.Router();
+
+// --- Database Helpers ---
+const DB_REGISTRY_KEY = 'sys:registry';
+
+async function fetchAllData() {
     try {
         const collections = await redis.zRange(DB_REGISTRY_KEY, 0, -1);
         const dbData = {};
@@ -13,11 +32,7 @@ export async function fetchAllData() {
             const raw = await redis.hGetAll(colName);
             const parsed = {};
             for (const [k, v] of Object.entries(raw)) {
-                try { 
-                    parsed[k] = JSON.parse(v); 
-                } catch(e) { 
-                    parsed[k] = v; 
-                }
+                try { parsed[k] = JSON.parse(v); } catch(e) { parsed[k] = v; }
             }
             dbData[colName] = parsed;
         }));
@@ -29,13 +44,22 @@ export async function fetchAllData() {
         };
         
         try {
-            const currUser = await reddit.getCurrentUser();
-            if (currUser) {
-                user = {
-                    id: currUser.id,
-                    username: currUser.username,
-                    avatar_url: currUser.snoovatarImage || user.avatar_url
+            // Try to get current user from context or Reddit API
+            if (context.userId) {
+                user = { 
+                    id: context.userId, 
+                    username: context.username || 'RedditUser',
+                    avatar_url: user.avatar_url 
                 };
+            } else {
+                const currUser = await reddit.getCurrentUser();
+                if (currUser) {
+                    user = {
+                        id: currUser.id,
+                        username: currUser.username,
+                        avatar_url: currUser.snoovatarImage || user.avatar_url
+                    };
+                }
             }
         } catch(e) { 
             console.warn('User fetch failed', e); 
@@ -47,24 +71,18 @@ export async function fetchAllData() {
         return { dbData: {}, user: null };
     }
 }
-`;
 
-export const getServerInitJs = () => `
-import { fetchAllData } from './db.js';
+// --- API Routes (Client -> Server) ---
+// Note: All client-callable endpoints must start with /api/
 
-export default async function (req, res) {
+router.get('/api/init', async (_req, res) => {
     const data = await fetchAllData();
     res.json(data);
-}
-`;
+});
 
-export const getServerSaveJs = () => `
-import { redis } from '@devvit/web/server';
-import { DB_REGISTRY_KEY } from './db.js';
-
-export default async function (req, res) {
+router.post('/api/save', async (req, res) => {
     try {
-        const { collection, key, value } = await req.json();
+        const { collection, key, value } = req.body;
         await redis.hSet(collection, { [key]: JSON.stringify(value) });
         await redis.zAdd(DB_REGISTRY_KEY, { member: collection, score: Date.now() });
         res.json({ success: true, collection, key });
@@ -72,61 +90,48 @@ export default async function (req, res) {
         console.error('DB Save Error:', e);
         res.status(500).json({ error: e.message });
     }
-}
-`;
+});
 
-export const getServerLoadJs = () => `
-import { redis } from '@devvit/web/server';
-
-export default async function (req, res) {
+router.post('/api/load', async (req, res) => {
     try {
-        const { collection, key } = await req.json();
+        const { collection, key } = req.body;
         const value = await redis.hGet(collection, key);
         res.json({ collection, key, value: value ? JSON.parse(value) : null });
     } catch(e) {
         console.error('DB Get Error:', e);
         res.status(500).json({ error: e.message });
     }
-}
-`;
+});
 
-export const getServerDeleteJs = () => `
-import { redis } from '@devvit/web/server';
-
-export default async function (req, res) {
+router.post('/api/delete', async (req, res) => {
     try {
-        const { collection, key } = await req.json();
+        const { collection, key } = req.body;
         await redis.hDel(collection, [key]);
         res.json({ success: true, collection, key });
     } catch(e) {
         console.error('DB Delete Error:', e);
         res.status(500).json({ error: e.message });
     }
-}
-`;
+});
 
-export const getServerOnInstallJs = () => `
-// Maps to /internal/onInstall
-export default async function (req, res) {
+// --- Internal Routes (Menu/Triggers) ---
+// Note: All internal endpoints must start with /internal/
+
+router.post('/internal/onInstall', async (req, res) => {
     console.log('App installed!');
     res.json({ success: true });
-}
-`;
+});
 
-export const getServerCreatePostJs = (title) => {
-    const safeTitle = title.replace(/'/g, "\\'");
-    return `
-import { reddit } from '@devvit/web/server';
-
-// Maps to /internal/createPost
-export default async function (req, res) {
+router.post('/internal/createPost', async (_req, res) => {
     console.log('Creating game post...');
+    
     try {
-        // Access context from the request object
-        const { subredditName } = req.context;
-        
+        // Use the global context object from @devvit/web/server
+        const { subredditName } = context;
+        console.log('Context Subreddit:', subredditName);
+
         if (!subredditName) {
-            throw new Error('Could not determine subreddit from context');
+            return res.status(400).json({ error: 'Subreddit name is required' });
         }
 
         const post = await reddit.submitCustomPost({
@@ -137,7 +142,7 @@ export default async function (req, res) {
                 text: 'Play this game built with WebSim!'
             }
         });
-        
+
         res.json({
             showToast: { text: 'Game post created!' },
             navigateTo: post
@@ -146,7 +151,15 @@ export default async function (req, res) {
         console.error('Failed to create post:', e);
         res.status(500).json({ error: e.message });
     }
-}
+});
+
+app.use(router);
+
+const port = getServerPort();
+const server = createServer(app);
+
+server.on('error', (err) => console.error(\`server error; \${err.stack}\`));
+server.listen(port, () => console.log(\`Server listening on \${port}\`));
 `;
 };
 
